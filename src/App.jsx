@@ -443,6 +443,8 @@ const handleUpdateTrack = useCallback((id, updates) => {
       )
 
     setIsPlaying(true)
+
+    playbackNotes.sort((a, b) => a.start - b.start)
     const stop = await startPlayback(
       playbackNotes, bpm, playStartCell, totalCells, tempoMap,
       cell  => setPlayhead(cell),

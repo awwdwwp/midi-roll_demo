@@ -1,5 +1,6 @@
 import { getAudioEngine } from "./webAudioFont"
 const activeSources = new Set()
+let activeVoices = 0
 
 function findZone(preset, midi) {
 
@@ -34,7 +35,7 @@ export async function playSample(
   volume = 1,
   when = null
 ) {
-
+let t0 = performance.now()
   const { audioContext } = await getAudioEngine()
 
   const zone = findZone(preset, midi)
@@ -45,11 +46,16 @@ export async function playSample(
   }
 
   const source = audioContext.createBufferSource()
+  activeVoices++
+
+if (activeVoices > 300)
+    console.log("voices", activeVoices)
 
   activeSources.add(source)
 
   source.onended = () => {
     activeSources.delete(source)
+    activeVoices--
   }
 
   source.buffer = zone.buffer
@@ -82,7 +88,11 @@ export async function playSample(
   source.connect(gain)
   gain.connect(audioContext.destination)
 
+  let t1 = performance.now()
 
+if (t1 - t0 > 1) {
+  console.log("playSample setup:", (t1 - t0).toFixed(2), "ms")
+}
   source.start(
     startTime,
     zone.delay ?? 0

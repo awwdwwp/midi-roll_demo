@@ -27,6 +27,8 @@ const playNote = useCallback(async (midiPitch, program = 0) => {
 
 }, [])
 
+/** Schedule Audio */
+
 
   /**
    * Piano key pressed.
@@ -83,32 +85,101 @@ const playNote = useCallback(async (midiPitch, program = 0) => {
     const playbackStart =
       audioContext.currentTime + 0.05
 
+      let nextNoteIndex = 0
 
+    // notes
+    //   .filter(n => n.start + n.dur > start)
+    //   .forEach(note => {
 
-    notes
-      .filter(n => n.start + n.dur > start)
-      .forEach(note => {
+    //     const preset =
+    //       presets.get(note.instrument ?? 0)
 
-        const preset =
-          presets.get(note.instrument ?? 0)
+    //     if (!preset) return
 
-        if (!preset) return
+    //     const when =
+    //       playbackStart +
+    //       (note.start - start) * secondsPer16th
 
-        const when =
-          playbackStart +
-          (note.start - start) * secondsPer16th
+    //     playSample(
+    //       preset,
+    //       note.pitch,
+    //       note.dur * secondsPer16th,
+    //       (note.vel ?? 100) / 127,
+    //       when
+    //     )
 
-        playSample(
-          preset,
-          note.pitch,
-          note.dur * secondsPer16th,
-          (note.vel ?? 100) / 127,
-          when
-        )
+    //   })
+    const LOOKAHEAD = 0.20
+    const SCHEDULE_INTERVAL = 0.05
+console.log("Playback started")
+console.log("Total notes:", notes.length)
+console.log("Audio time:", audioContext.currentTime)
+console.log("Playback start:", playbackStart)
+    const scheduleNotes = () => {
+// console.log("scheduler tick")
+  const now =
+    audioContext.currentTime
 
-      })
+  const scheduleUntil =
+    now + LOOKAHEAD
 
+    let scheduled = 0
+// console.log("notes:", notes.length, "next:", nextNoteIndex)
+  while (nextNoteIndex < notes.length) {
 
+    const note =
+      notes[nextNoteIndex]
+
+    const noteTime =
+      playbackStart +
+      (note.start - start) * secondsPer16th
+// console.log({
+//   start: note.start,
+//   noteTime,
+//   scheduleUntil
+// })
+    if (noteTime > scheduleUntil)
+      break
+
+    const preset =
+      presets.get(note.instrument ?? 0)
+
+    if (preset) {
+
+      playSample(
+        preset,
+        note.pitch,
+        note.dur * secondsPer16th,
+        (note.vel ?? 100) / 127,
+        noteTime
+      )
+
+    }
+
+    nextNoteIndex++
+    scheduled++
+
+  }
+  
+  if (scheduled > 20) {
+    console.log(
+        "Scheduled",
+        scheduled,
+        "notes"
+    )
+}
+if (scheduled > 100) {
+    console.log("Large batch:", scheduled)
+}
+
+}
+
+const scheduler = setInterval(
+    scheduleNotes,
+    SCHEDULE_INTERVAL * 1000
+)
+
+scheduleNotes()
 
     const playbackLength =
       (totalCells - start) *
@@ -141,6 +212,8 @@ const playNote = useCallback(async (midiPitch, program = 0) => {
         raf =
           requestAnimationFrame(tick)
 
+        
+
       }
 
     }
@@ -154,9 +227,13 @@ const playNote = useCallback(async (midiPitch, program = 0) => {
 
       clearTimeout(endTimer)
 
+      clearInterval(scheduler)
+
       cancelAnimationFrame(raf)
 
        stopAllSamples()
+
+       
     }
 
   }, [])

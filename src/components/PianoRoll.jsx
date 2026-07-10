@@ -435,7 +435,7 @@ const handleDrawClick = (e) => {
             />
 
             {/* Ghost notes from other tracks */}
-            {ghostTracks.map(({ color, notes: gNotes }) =>
+            {/* {ghostTracks.map(({ color, notes: gNotes }) =>
               gNotes.map(n => (
                 <div
                   key={n.id}
@@ -453,9 +453,9 @@ const handleDrawClick = (e) => {
                   }}
                 />
               ))
-            )}
+            )} */}
 
-            {notes.map(n => (
+            {/* {notes.map(n => (
               <NoteBlock
                   key={n.id}
                   note={effectiveNote(n)}
@@ -464,7 +464,7 @@ const handleDrawClick = (e) => {
                   cellW={cellW}
                   trackColor={activeTrackColor}
                 />
-            ))}
+            ))} */}
 
             {ghost && !ghostBlocked && !isSelectMode && (
               <div
