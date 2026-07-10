@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import {
   CELL_W, CELL_H, PIANO_W, RULER_H,
   MIN_NOTE, MAX_NOTE, TOTAL_NOTES, BEATS, SUBS,
@@ -58,6 +58,7 @@ export function PianoRoll({
   selectedIds, onToggleNote, onPreviewNote,
   onUpdateNotes, onSelectNotes, onDeselectAll, onToggleSelect,
 }) {
+  // console.count("PianoRoll")
   const { theme } = useTheme()
   const cellW = CELL_W * zoomX
   const [ghost, setGhost] = useState(null)
@@ -346,24 +347,7 @@ const handleDrawClick = (e) => {
     }
   }
 
-  // ── Visual drag preview ────────────────────────────────────────────────────
-  const effectiveNote = (n) => {
-    if (!dragPreview) return n
-
-    if (dragPreview.type === 'resize' && dragPreview.noteId === n.id) {
-      return { ...n, dur: dragPreview.newDur }
-    }
-
-    if (dragPreview.type === 'move' && dragPreview.ids?.has(n.id)) {
-      return {
-        ...n,
-        start: clamp(n.start + dragPreview.deltaCol, 0, totalCells - n.dur),
-        pitch: clamp(n.pitch + dragPreview.deltaPitch, MIN_NOTE, MAX_NOTE),
-      }
-    }
-
-    return n
-  }
+ 
 
   const ghostBlocked = ghost && notes.some(
     n => n.pitch === ghost.pitch &&
@@ -435,36 +419,20 @@ const handleDrawClick = (e) => {
             />
 
             {/* Ghost notes from other tracks */}
-            {ghostTracks.map(({ color, notes: gNotes }) =>
-              gNotes.map(n => (
-                <div
-                  key={n.id}
-                  style={{
-                    position: 'absolute',
-                    left: n.start * cellW + 1,
-                    top: pitchToY(n.pitch) + 1,
-                    width: Math.max(4, n.dur * cellW - 2),
-                    height: CELL_H - 2,
-                    background: color,
-                    opacity: 0.18,
-                    borderRadius: 2,
-                    pointerEvents: 'none',
-                    zIndex: 3,
-                  }}
-                />
-              ))
-            )}
+            <GhostNotesLayer
+                ghostTracks={ghostTracks}
+                cellW={cellW}
+            />
 
-            {notes.map(n => (
-              <NoteBlock
-                  key={n.id}
-                  note={effectiveNote(n)}
-                  selected={selectedIds?.has(n.id)}
-                  theme={theme}
-                  cellW={cellW}
-                  trackColor={activeTrackColor}
-                />
-            ))}
+            <NotesLayer
+              notes={notes}
+              // effectiveNote={effectiveNote}
+              dragPreview={dragPreview}
+              selectedIds={selectedIds}
+              theme={theme}
+              cellW={cellW}
+              activeTrackColor={activeTrackColor}
+          />
 
             {ghost && !ghostBlocked && !isSelectMode && (
               <div
@@ -653,6 +621,98 @@ function NoteBlock({ note, selected, theme, cellW, trackColor }) {
     </div>
   )
 }
+
+const GhostNotesLayer = React.memo(function GhostNotesLayer({
+    ghostTracks,
+    cellW
+}) {
+
+    // console.count("GhostNotesLayer")
+
+    return (
+        <>
+            {ghostTracks.map(({ color, notes: gNotes }) =>
+                gNotes.map(note => (
+                    <GhostNote
+                        key={note.id}
+                        note={note}
+                        color={color}
+                        cellW={cellW}
+                    />
+                ))
+            )}
+        </>
+    )
+})
+
+function GhostNote({
+    note,
+    color,
+    cellW
+}) {
+
+    return (
+        <div
+            style={{
+                position: 'absolute',
+                left: note.start * cellW + 1,
+                top: pitchToY(note.pitch) + 1,
+                width: Math.max(4, note.dur * cellW - 2),
+                height: CELL_H - 2,
+                background: color,
+                opacity: 0.18,
+                borderRadius: 2,
+                pointerEvents: 'none',
+                zIndex: 3,
+            }}
+        />
+    )
+}
+
+const NotesLayer = React.memo(function NotesLayer({
+    notes,
+    dragPreview,
+    selectedIds,
+    theme,
+    cellW,
+    activeTrackColor
+}) {
+    // console.count("NotesLayer")
+
+     // ── Visual drag preview ────────────────────────────────────────────────────
+  const effectiveNote = (n) => {
+    if (!dragPreview) return n
+
+    if (dragPreview.type === 'resize' && dragPreview.noteId === n.id) {
+      return { ...n, dur: dragPreview.newDur }
+    }
+
+    if (dragPreview.type === 'move' && dragPreview.ids?.has(n.id)) {
+      return {
+        ...n,
+        start: clamp(n.start + dragPreview.deltaCol, 0),
+        pitch: clamp(n.pitch + dragPreview.deltaPitch, MIN_NOTE, MAX_NOTE),
+      }
+    }
+
+    return n
+  }
+
+    return (
+        <>
+            {notes.map(n => (
+                <NoteBlock
+                    key={n.id}
+                    note={effectiveNote(n)}
+                    selected={selectedIds?.has(n.id)}
+                    theme={theme}
+                    cellW={cellW}
+                    trackColor={activeTrackColor}
+                />
+            ))}
+        </>
+    )
+})
 
 // ── Ruler ─────────────────────────────────────────────────────────────────────
 function Ruler({ theme, totalCells, cellW }) {
