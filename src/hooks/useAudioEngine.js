@@ -85,7 +85,10 @@ const playNote = useCallback(async (midiPitch, program = 0) => {
     const playbackStart =
       audioContext.currentTime + 0.05
 
-      let nextNoteIndex = 0
+    let nextNoteIndex = notes.findIndex(n => n.start >= start)
+
+    if (nextNoteIndex === -1)
+      nextNoteIndex = notes.length
 
     
     const LOOKAHEAD = 0.20
@@ -175,35 +178,22 @@ scheduleNotes()
     let raf
 
     const tick = () => {
-      // const VISUAL_OFFSET = 0.02
-      
-    const elapsed = Math.max(
-        0,
+      const elapsed =
         audioContext.currentTime - playbackStart
-    )
-
-      const cell =
-          start +
-          (elapsed ) / secondsPer16th
-
+    
+      const cell = Math.max(
+        start,
+        start + elapsed / secondsPer16th
+      )
+    
       if (cell <= totalCells) {
-
-        // console.count("tick")
         onTick(cell)
-
-        raf =
-          requestAnimationFrame(tick)
-
-        
-
-      }
-
       
-
+        raf = requestAnimationFrame(tick)
+      }
     }
 
-    raf =
-      requestAnimationFrame(tick)
+    raf = requestAnimationFrame(tick)
 
 
 

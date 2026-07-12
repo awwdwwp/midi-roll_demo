@@ -52,20 +52,19 @@ function rRect(ctx, x, y, w, h, r) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export function WaterfallView({ notes, playhead, bpm, theme, isPlaying, wfZoom = 1 }) {
+export function WaterfallView({ notes, playheadRef, bpm, theme, isPlaying, wfZoom = 1 }) {
   const canvasRef  = useRef(null)
   const layoutRef  = useRef(null)
   const rafRef     = useRef(null)
 
   // Keep fresh refs so the rAF closure never goes stale
-  const phRef      = useRef(playhead)
+
   const notesRef   = useRef(notes)
   const bpmRef     = useRef(bpm)
   const themeRef   = useRef(theme)
   const playingRef = useRef(isPlaying)
   const wfZoomRef = useRef(wfZoom)
 
-  useEffect(() => { phRef.current      = playhead  }, [playhead])
   useEffect(() => { notesRef.current   = notes     }, [notes])
   useEffect(() => { bpmRef.current     = bpm       }, [bpm])
   useEffect(() => { themeRef.current   = theme     }, [theme])
@@ -106,7 +105,7 @@ export function WaterfallView({ notes, playhead, bpm, theme, isPlaying, wfZoom =
       const W     = canvas.width
       const H     = canvas.height
       const t     = themeRef.current
-      const ph    = phRef.current ?? 0
+      const ph = playheadRef.current ?? 0
       const bpmV  = bpmRef.current ?? 120
       const ns    = notesRef.current
       const { layout } = layoutRef.current

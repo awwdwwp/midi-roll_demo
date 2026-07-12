@@ -6,7 +6,7 @@ import {
 } from '../constants'
 import { useTheme } from '../context/ThemeContext'
 import { useViewport } from '../hooks/useViewport'
-import PlayheadOverlay from './PlayheadOverlay'
+
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -51,7 +51,6 @@ export function PianoRoll({
   notes,
   ghostTracks = [], activeTrackColor,
   currentPlayheadCell,
-  playheadRef,
   playStartCell,
   onSetPlayStart,
   totalCells,
@@ -78,6 +77,8 @@ export function PianoRoll({
   const rulerRef = useRef(null)
   const dragRef = useRef(null)
   const dragPreviewRef = useRef(null)
+
+  const playheadLineRef = useRef(null)
   
   
 
@@ -131,16 +132,16 @@ export function PianoRoll({
     m.scrollTop = pitchToY(60) - m.clientHeight / 2
   }, [])
 
-  useEffect(() => {
-    if (playheadRef === null) return
-    const m = mainRef.current
-    if (!m) return
-    const x = playheadRef * cellW
+  // useEffect(() => {
+  //   if (playheadRef === null) return
+  //   const m = mainRef.current
+  //   if (!m) return
+  //   const x = playheadRef * cellW
 
-    if (x > m.scrollLeft + m.clientWidth - cellW * 8) {
-      m.scrollLeft = x - m.clientWidth * 0.3
-    }
-  }, [playheadRef])
+  //   if (x > m.scrollLeft + m.clientWidth - cellW * 8) {
+  //     m.scrollLeft = x - m.clientWidth * 0.3
+  //   }
+  // }, [playheadRef])
 
   // Clear transient drag state when switching modes
   useEffect(() => {
@@ -263,32 +264,32 @@ useEffect(() => {
   }
 }, [onDeselectAll, totalCells, MIN_NOTE, MAX_NOTE, onSelectNotes, onUpdateNotes])
 
-useEffect(() => {
-    let raf
+// useEffect(() => {
+//     let raf
 
-    function update() {
-        const cell = currentPlayheadCell.current
+//     function update() {
+//         const cell = currentPlayheadCell.current
 
-        if (playheadRef.current) {
-            playheadRef.current.style.transform =
-                `translateX(${cell * cellW}px)`
-        }
+//         if (playheadRef.current) {
+//             playheadRef.current.style.transform =
+//                 `translateX(${cell * cellW}px)`
+//         }
 
-        raf = requestAnimationFrame(update)
+//         raf = requestAnimationFrame(update)
 
-        const x = cell * cellW
+//         const x = cell * cellW
 
-const view = mainRef.current
+// const view = mainRef.current
 
-if (view && x > view.scrollLeft + view.clientWidth - 200) {
-    view.scrollLeft = x - 200
-}
-    }
+// if (view && x > view.scrollLeft + view.clientWidth - 200) {
+//     view.scrollLeft = x - 200
+// }
+//     }
 
-    update()
+//     update()
 
-    return () => cancelAnimationFrame(raf)
-}, [cellW])
+//     return () => cancelAnimationFrame(raf)
+// }, [cellW])
 
 // useLayoutEffect(() => {
 //     if (!playheadRef.current) return
@@ -415,6 +416,51 @@ const handleDrawClick = (e) => {
       ghost.start >= n.start &&
       ghost.start < n.start + n.dur
   )
+
+  useEffect(() => {
+  let raf
+
+  const updatePlayhead = () => {
+    const cell = currentPlayheadCell?.current
+    const line = playheadLineRef.current
+    const view = mainRef.current
+
+    if (line) {
+      if (cell == null) {
+        line.style.display = "none"
+      } else {
+        line.style.display = "block"
+
+        const x = cell * cellW
+
+        line.style.transform =
+          `translate3d(${x}px, 0, 0)`
+
+        if (view) {
+          const rightEdge =
+            view.scrollLeft + view.clientWidth
+
+          const followMargin = 200
+
+          if (x > rightEdge - followMargin) {
+            view.scrollLeft = Math.max(
+              0,
+              x - followMargin
+            )
+          }
+        }
+      }
+    }
+
+    raf = requestAnimationFrame(updatePlayhead)
+  }
+
+  raf = requestAnimationFrame(updatePlayhead)
+
+  return () => {
+    cancelAnimationFrame(raf)
+  }
+}, [currentPlayheadCell, cellW])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
@@ -548,13 +594,30 @@ const handleDrawClick = (e) => {
               />
             )}
 
-            <PlayheadOverlay
+            <div
+              ref={playheadLineRef}
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: 2,
+                height: GRID_H,
+                background: theme.playhead,
+                pointerEvents: "none",
+                zIndex: 100,
+                display: "none",
+                transform: "translate3d(0, 0, 0)",
+                willChange: "transform",
+              }}
+            />
+
+            {/* <PlayheadOverlay
               playheadRef={playheadRef}
               cellW={cellW}
               pianoWidth={PIANO_W}
               rulerHeight={RULER_H}
               gridHeight={TOTAL_NOTES * CELL_H}
-            />
+            /> */}
 
             {/* <div */}
                 {/* ref={playheadRef}

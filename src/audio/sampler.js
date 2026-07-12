@@ -49,7 +49,7 @@ let t0 = performance.now()
   activeVoices++
 
 if (activeVoices > 300)
-    console.log("voices", activeVoices)
+    // console.log("voices", activeVoices)
 
   activeSources.add(source)
 
@@ -90,9 +90,9 @@ if (activeVoices > 300)
 
   let t1 = performance.now()
 
-if (t1 - t0 > 1) {
-  console.log("playSample setup:", (t1 - t0).toFixed(2), "ms")
-}
+// if (t1 - t0 > 1) {
+//   console.log("playSample setup:", (t1 - t0).toFixed(2), "ms")
+// }
   source.start(
     startTime,
     zone.delay ?? 0

@@ -60,8 +60,8 @@ export default function App() {
     [tracks, activeTrackId]
   )
 
-const playheadRef = useRef(null)
-const currentPlayheadCell = useRef(0)
+// const playheadRef = useRef(null)
+const currentPlayheadCell = useRef(null)
 
 const handleSaveProject = useCallback(() => {
   const snapshot = {
@@ -103,7 +103,7 @@ await Promise.all(
     resetProject(loaded)
 
     setSelectedIds(new Set())
-    playheadRef.current = null
+    currentPlayheadCell.current = null
 
     setIsPlaying(false)
   } catch (err) {
@@ -422,38 +422,48 @@ const handleUpdateTrack = useCallback((id, updates) => {
 
   // ─── Playback ──────────────────────────────────────────────────────────────
 
-  const handlePlayToggle = useCallback(async () => {
-    if (isPlaying) {
-      setProjectDirect(p => ({
-        ...p,
-        settings: {
-          ...p.settings,
-          playStartCell: Math.max(
-              0,
-              Math.floor(currentPlayheadCell.current)
-          ),
-        },
+ const handlePlayToggle = useCallback(async () => {
+  if (isPlaying) {
+    const currentCell =
+      currentPlayheadCell.current ?? playStartCell
+
+    setProjectDirect(p => ({
+      ...p,
+      settings: {
+        ...p.settings,
+        playStartCell: Math.max(
+          0,
+          Math.floor(currentCell)
+        ),
+      },
+    }))
+
+    stopFnRef.current?.()
+    stopFnRef.current = null
+
+    setIsPlaying(false)
+    currentPlayheadCell.current = null
+
+    return
+  }
+
+  const hasSolo = tracks.some(t => t.solo)
+
+  const playbackNotes = tracks
+    .filter(t => hasSolo ? t.solo : !t.muted)
+    .flatMap(track =>
+      track.notes.map(note => ({
+        ...note,
+        instrument: track.instrument,
+        trackId: track.id,
       }))
-      stopFnRef.current?.()
-      setIsPlaying(false)
-      playheadRef.current = null
-      return
-    }
-
-    const hasSolo       = tracks.some(t => t.solo)
-    const playbackNotes = tracks
-      .filter(t => hasSolo ? t.solo : !t.muted)
-      .flatMap(track => 
-        track.notes.map(note => ({
-          ...note,
-          instrument: track.instrument,
-          trackId: track.id,
-        }))
-      )
-
-    setIsPlaying(true)
+    )
 
   playbackNotes.sort((a, b) => a.start - b.start)
+
+  currentPlayheadCell.current = playStartCell
+
+  setIsPlaying(true)
 
   const stop = await startPlayback(
     playbackNotes,
@@ -463,12 +473,13 @@ const handleUpdateTrack = useCallback((id, updates) => {
     tempoMap,
 
     cell => {
-      playheadRef.current = cell
+      currentPlayheadCell.current = cell
     },
 
     () => {
+      currentPlayheadCell.current = null
+      stopFnRef.current = null
       setIsPlaying(false)
-      playheadRef.current = null
     }
   )
 
@@ -715,7 +726,6 @@ const handleUpdateTrack = useCallback((id, updates) => {
             ghostTracks={ghostTracks}
             // playhead={playhead}
             currentPlayheadCell={currentPlayheadCell}
-            playheadRef={playheadRef}
             playStartCell={playStartCell}
             onSetPlayStart={v =>
               setProjectDirect(p => ({ ...p, settings: { ...p.settings, playStartCell: v } }))
@@ -737,7 +747,7 @@ const handleUpdateTrack = useCallback((id, updates) => {
         ) : (
           <WaterfallView
             notes={waterfallNotes}
-            playhead={playhead}
+            playheadRef={currentPlayheadCell}
             bpm={bpm}
             theme={theme}
             isPlaying={isPlaying}
