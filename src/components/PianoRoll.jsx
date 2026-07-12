@@ -1,10 +1,12 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react'
 import {
   CELL_W, CELL_H, PIANO_W, RULER_H,
   MIN_NOTE, MAX_NOTE, TOTAL_NOTES, BEATS, SUBS,
   midiToName, isBlackKey, isCNote, MODES
 } from '../constants'
 import { useTheme } from '../context/ThemeContext'
+import { useViewport } from '../hooks/useViewport'
+import PlayheadOverlay from './PlayheadOverlay'
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -48,7 +50,8 @@ const findNote = (notes, pitch, col) => {
 export function PianoRoll({
   notes,
   ghostTracks = [], activeTrackColor,
-  playhead,
+  currentPlayheadCell,
+  playheadRef,
   playStartCell,
   onSetPlayStart,
   totalCells,
@@ -59,6 +62,10 @@ export function PianoRoll({
   onUpdateNotes, onSelectNotes, onDeselectAll, onToggleSelect,
 }) {
   // console.count("PianoRoll")
+//   console.log({
+//     playhead,
+//     playStartCell,
+// })
   const { theme } = useTheme()
   const cellW = CELL_W * zoomX
   const [ghost, setGhost] = useState(null)
@@ -71,6 +78,14 @@ export function PianoRoll({
   const rulerRef = useRef(null)
   const dragRef = useRef(null)
   const dragPreviewRef = useRef(null)
+  
+  
+
+ const viewport = useViewport(
+    mainRef,
+    cellW,
+    CELL_H
+)
 
   const gridW = totalCells * cellW;
 
@@ -117,15 +132,15 @@ export function PianoRoll({
   }, [])
 
   useEffect(() => {
-    if (playhead === null) return
+    if (playheadRef === null) return
     const m = mainRef.current
     if (!m) return
-    const x = playhead * cellW
+    const x = playheadRef * cellW
 
     if (x > m.scrollLeft + m.clientWidth - cellW * 8) {
       m.scrollLeft = x - m.clientWidth * 0.3
     }
-  }, [playhead])
+  }, [playheadRef])
 
   // Clear transient drag state when switching modes
   useEffect(() => {
@@ -247,6 +262,52 @@ useEffect(() => {
     window.removeEventListener('mouseup', onUp)
   }
 }, [onDeselectAll, totalCells, MIN_NOTE, MAX_NOTE, onSelectNotes, onUpdateNotes])
+
+useEffect(() => {
+    let raf
+
+    function update() {
+        const cell = currentPlayheadCell.current
+
+        if (playheadRef.current) {
+            playheadRef.current.style.transform =
+                `translateX(${cell * cellW}px)`
+        }
+
+        raf = requestAnimationFrame(update)
+
+        const x = cell * cellW
+
+const view = mainRef.current
+
+if (view && x > view.scrollLeft + view.clientWidth - 200) {
+    view.scrollLeft = x - 200
+}
+    }
+
+    update()
+
+    return () => cancelAnimationFrame(raf)
+}, [cellW])
+
+// useLayoutEffect(() => {
+//     if (!playheadRef.current) return
+
+//     playheadRef.current.style.transform =
+//         `translateX(${playhead * cellW}px)`
+// }, [playhead, cellW])
+
+// useLayoutEffect(() => {
+//     const view = mainRef.current
+//     if (!view) return
+
+//     const x = playhead * cellW
+//     const margin = 200
+
+//     if (x > view.scrollLeft + view.clientWidth - margin) {
+//         view.scrollLeft = x - margin
+//     }
+// }, [playhead, cellW])
 
   // ── Draw mode handlers ─────────────────────────────────────────────────────
 const handleDrawClick = (e) => {
@@ -422,16 +483,20 @@ const handleDrawClick = (e) => {
             <GhostNotesLayer
                 ghostTracks={ghostTracks}
                 cellW={cellW}
+                viewport={viewport}
             />
 
             <NotesLayer
               notes={notes}
               // effectiveNote={effectiveNote}
+              viewport={viewport}
               dragPreview={dragPreview}
               selectedIds={selectedIds}
               theme={theme}
               cellW={cellW}
               activeTrackColor={activeTrackColor}
+              totalCells={totalCells}
+              
           />
 
             {ghost && !ghostBlocked && !isSelectMode && (
@@ -483,20 +548,29 @@ const handleDrawClick = (e) => {
               />
             )}
 
-            {playhead !== null && (
-              <div
+            <PlayheadOverlay
+              playheadRef={playheadRef}
+              cellW={cellW}
+              pianoWidth={PIANO_W}
+              rulerHeight={RULER_H}
+              gridHeight={TOTAL_NOTES * CELL_H}
+            />
+
+            {/* <div */}
+                {/* ref={playheadRef}
                 style={{
-                  position: 'absolute',
-                  left: safeNum(playhead) * cellW,
-                  top: 0,
-                  width: 2,
-                  height: GRID_H,
-                  background: theme.playhead,
-                  pointerEvents: 'none',
-                  zIndex: 20,
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    width: 2,
+                    height: GRID_H,
+                    background: theme.playhead,
+                    pointerEvents: 'none',
+                    zIndex: 20,
+                    transform: 'translateX(0px)',
+                    willChange: 'transform',
                 }}
-              />
-            )}
+            /> */}
           </div>
         </div>
       </div>
@@ -566,6 +640,13 @@ function NoteBlock({ note, selected, theme, cellW, trackColor }) {
   const w = note.dur * cellW - 2
   const h = CELL_H - 2
 
+//   if (note.start === 0) {
+//     console.log({
+//         noteX: note.start * cellW + 1,
+//         cellW,
+//     })
+// }
+
   const baseColor = trackColor ?? theme.noteGrad1
   const gradient = selected
   ? `linear-gradient(180deg, ${theme.noteSelGrad1} 0%, ${theme.noteSelGrad2} 100%)`
@@ -624,15 +705,39 @@ function NoteBlock({ note, selected, theme, cellW, trackColor }) {
 
 const GhostNotesLayer = React.memo(function GhostNotesLayer({
     ghostTracks,
-    cellW
+    cellW,
+    viewport,
 }) {
+    const visibleGhostTracks = useMemo(() => {
+        return ghostTracks.map(track => ({
+            ...track,
 
-    // console.count("GhostNotesLayer")
+            notes: track.notes.filter(note => {
+                const row = MAX_NOTE - note.pitch
+
+                const horizontallyVisible =
+                    note.start < viewport.lastCol &&
+                    note.start + note.dur > viewport.firstCol
+
+                const verticallyVisible =
+                    row >= viewport.firstRow &&
+                    row <= viewport.lastRow
+
+                return horizontallyVisible && verticallyVisible
+            }),
+        }))
+    }, [
+        ghostTracks,
+        viewport.firstCol,
+        viewport.lastCol,
+        viewport.firstRow,
+        viewport.lastRow,
+    ])
 
     return (
         <>
-            {ghostTracks.map(({ color, notes: gNotes }) =>
-                gNotes.map(note => (
+            {visibleGhostTracks.map(({ color, notes }) =>
+                notes.map(note => (
                     <GhostNote
                         key={note.id}
                         note={note}
@@ -671,40 +776,87 @@ function GhostNote({
 
 const NotesLayer = React.memo(function NotesLayer({
     notes,
+    viewport,
     dragPreview,
     selectedIds,
     theme,
     cellW,
-    activeTrackColor
+    activeTrackColor,
+    totalCells,
 }) {
-    // console.count("NotesLayer")
+    const visibleNotes = useMemo(() => {
+        return notes
+            .map(n => {
+                if (!dragPreview) return n
 
-     // ── Visual drag preview ────────────────────────────────────────────────────
-  const effectiveNote = (n) => {
-    if (!dragPreview) return n
+                if (
+                    dragPreview.type === 'resize' &&
+                    dragPreview.noteId === n.id
+                ) {
+                    return {
+                        ...n,
+                        dur: dragPreview.newDur,
+                    }
+                }
 
-    if (dragPreview.type === 'resize' && dragPreview.noteId === n.id) {
-      return { ...n, dur: dragPreview.newDur }
-    }
+                if (
+                    dragPreview.type === 'move' &&
+                    dragPreview.ids?.has(n.id)
+                ) {
+                    return {
+                        ...n,
+                        start: clamp(
+                            n.start + dragPreview.deltaCol,
+                            0,
+                            totalCells - n.dur
+                        ),
+                        pitch: clamp(
+                            n.pitch + dragPreview.deltaPitch,
+                            MIN_NOTE,
+                            MAX_NOTE
+                        ),
+                    }
+                }
 
-    if (dragPreview.type === 'move' && dragPreview.ids?.has(n.id)) {
-      return {
-        ...n,
-        start: clamp(n.start + dragPreview.deltaCol, 0),
-        pitch: clamp(n.pitch + dragPreview.deltaPitch, MIN_NOTE, MAX_NOTE),
-      }
-    }
+                return n
+            })
+            .filter(note => {
+                const row = MAX_NOTE - note.pitch
 
-    return n
-  }
+                const horizontallyVisible =
+                    note.start < viewport.lastCol &&
+                    note.start + note.dur > viewport.firstCol
+
+                const verticallyVisible =
+                    row >= viewport.firstRow &&
+                    row <= viewport.lastRow
+
+                return horizontallyVisible && verticallyVisible
+            })
+    }, [
+        notes,
+        dragPreview,
+        totalCells,
+        viewport.firstCol,
+        viewport.lastCol,
+        viewport.firstRow,
+        viewport.lastRow,
+    ])
+
+    // console.log(
+    //     "NotesLayer notes:",
+    //     notes.length,
+    //     "visible:",
+    //     visibleNotes.length
+    // )
 
     return (
         <>
-            {notes.map(n => (
+            {visibleNotes.map(note => (
                 <NoteBlock
-                    key={n.id}
-                    note={effectiveNote(n)}
-                    selected={selectedIds?.has(n.id)}
+                    key={note.id}
+                    note={note}
+                    selected={selectedIds?.has(note.id)}
                     theme={theme}
                     cellW={cellW}
                     trackColor={activeTrackColor}

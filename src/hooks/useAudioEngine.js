@@ -87,34 +87,13 @@ const playNote = useCallback(async (midiPitch, program = 0) => {
 
       let nextNoteIndex = 0
 
-    // notes
-    //   .filter(n => n.start + n.dur > start)
-    //   .forEach(note => {
-
-    //     const preset =
-    //       presets.get(note.instrument ?? 0)
-
-    //     if (!preset) return
-
-    //     const when =
-    //       playbackStart +
-    //       (note.start - start) * secondsPer16th
-
-    //     playSample(
-    //       preset,
-    //       note.pitch,
-    //       note.dur * secondsPer16th,
-    //       (note.vel ?? 100) / 127,
-    //       when
-    //     )
-
-    //   })
+    
     const LOOKAHEAD = 0.20
     const SCHEDULE_INTERVAL = 0.05
-console.log("Playback started")
-console.log("Total notes:", notes.length)
-console.log("Audio time:", audioContext.currentTime)
-console.log("Playback start:", playbackStart)
+// console.log("Playback started")
+// console.log("Total notes:", notes.length)
+// console.log("Audio time:", audioContext.currentTime)
+// console.log("Playback start:", playbackStart)
     const scheduleNotes = () => {
 // console.log("scheduler tick")
   const now =
@@ -161,16 +140,16 @@ console.log("Playback start:", playbackStart)
 
   }
   
-  if (scheduled > 20) {
-    console.log(
-        "Scheduled",
-        scheduled,
-        "notes"
-    )
-}
-if (scheduled > 100) {
-    console.log("Large batch:", scheduled)
-}
+//   if (scheduled > 20) {
+//     console.log(
+//         "Scheduled",
+//         scheduled,
+//         "notes"
+//     )
+// }
+// if (scheduled > 100) {
+//     console.log("Large batch:", scheduled)
+// }
 
 }
 
@@ -196,17 +175,20 @@ scheduleNotes()
     let raf
 
     const tick = () => {
-
-      const elapsed =
-        audioContext.currentTime -
-        playbackStart
+      // const VISUAL_OFFSET = 0.02
+      
+    const elapsed = Math.max(
+        0,
+        audioContext.currentTime - playbackStart
+    )
 
       const cell =
-        start +
-        elapsed / secondsPer16th
+          start +
+          (elapsed ) / secondsPer16th
 
       if (cell <= totalCells) {
 
+        // console.count("tick")
         onTick(cell)
 
         raf =
@@ -215,6 +197,8 @@ scheduleNotes()
         
 
       }
+
+      
 
     }
 

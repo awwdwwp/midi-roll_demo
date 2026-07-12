@@ -16,6 +16,7 @@ import {
 } from './constants'
 //temp
 import { loadPreset } from "./audio/gmPresets"
+import PlayheadOverlay from './components/PlayheadOverlay'
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -32,7 +33,7 @@ export default function App() {
   // ── Ephemeral UI state (never serialised, never undoable) ──────────────────
   const [durCells,    setDurCells]    = useState(2)
   const [isPlaying,   setIsPlaying]   = useState(false)
-  const [playhead,    setPlayhead]    = useState(null)
+  // const [playhead,    setPlayhead]    = useState(null)
   const [mode,        setMode]        = useState(MODES.DRAW)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [showTracks,  setShowTracks]  = useState(true)
@@ -40,6 +41,8 @@ export default function App() {
   const [showToolbar, setShowToolbar] = useState(true)
 
   const stopFnRef = useRef(null)
+  
+
   const {
   playNote,
   attackNote,
@@ -57,6 +60,8 @@ export default function App() {
     [tracks, activeTrackId]
   )
 
+const playheadRef = useRef(null)
+const currentPlayheadCell = useRef(0)
 
 const handleSaveProject = useCallback(() => {
   const snapshot = {
@@ -98,7 +103,8 @@ await Promise.all(
     resetProject(loaded)
 
     setSelectedIds(new Set())
-    setPlayhead(null)
+    playheadRef.current = null
+
     setIsPlaying(false)
   } catch (err) {
     alert(`Could not load project: ${err.message}`)
@@ -422,12 +428,15 @@ const handleUpdateTrack = useCallback((id, updates) => {
         ...p,
         settings: {
           ...p.settings,
-          playStartCell: Math.max(0, Math.floor(playhead ?? p.settings.playStartCell)),
+          playStartCell: Math.max(
+              0,
+              Math.floor(currentPlayheadCell.current)
+          ),
         },
       }))
       stopFnRef.current?.()
       setIsPlaying(false)
-      setPlayhead(null)
+      playheadRef.current = null
       return
     }
 
@@ -444,15 +453,36 @@ const handleUpdateTrack = useCallback((id, updates) => {
 
     setIsPlaying(true)
 
-    playbackNotes.sort((a, b) => a.start - b.start)
-    const stop = await startPlayback(
-      playbackNotes, bpm, playStartCell, totalCells, tempoMap,
-      cell  => setPlayhead(cell),
-      ()    => { setIsPlaying(false); setPlayhead(null) }
-    )
-    stopFnRef.current = stop
-  }, [isPlaying, tracks, bpm, playStartCell, playhead, totalCells, tempoMap, startPlayback, setProjectDirect])
+  playbackNotes.sort((a, b) => a.start - b.start)
 
+  const stop = await startPlayback(
+    playbackNotes,
+    bpm,
+    playStartCell,
+    totalCells,
+    tempoMap,
+
+    cell => {
+      playheadRef.current = cell
+    },
+
+    () => {
+      setIsPlaying(false)
+      playheadRef.current = null
+    }
+  )
+
+  stopFnRef.current = stop
+}, [
+  isPlaying,
+  tracks,
+  bpm,
+  playStartCell,
+  totalCells,
+  tempoMap,
+  startPlayback,
+  setProjectDirect,
+])
   // ─── Keyboard shortcuts ────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -683,7 +713,9 @@ const handleUpdateTrack = useCallback((id, updates) => {
           <PianoRoll
             notes={activeTrack?.notes ?? []}
             ghostTracks={ghostTracks}
-            playhead={playhead}
+            // playhead={playhead}
+            currentPlayheadCell={currentPlayheadCell}
+            playheadRef={playheadRef}
             playStartCell={playStartCell}
             onSetPlayStart={v =>
               setProjectDirect(p => ({ ...p, settings: { ...p.settings, playStartCell: v } }))
