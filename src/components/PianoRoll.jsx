@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react'
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import {
   CELL_W, CELL_H, PIANO_W, RULER_H,
   MIN_NOTE, MAX_NOTE, TOTAL_NOTES, BEATS, SUBS,
@@ -51,6 +51,7 @@ export function PianoRoll({
   notes,
   ghostTracks = [], activeTrackColor,
   currentPlayheadCell,
+   isPlaying,
   playStartCell,
   onSetPlayStart,
   totalCells,
@@ -58,7 +59,7 @@ export function PianoRoll({
   mode,
   zoomX,
   selectedIds, onToggleNote, onPreviewNote,
-  onUpdateNotes, onSelectNotes, onDeselectAll, onToggleSelect,
+  onUpdateNotes, onDuplicateNotes, onSelectNotes, onDeselectAll, onToggleSelect,
 }) {
   // console.count("PianoRoll")
 //   console.log({
@@ -107,16 +108,65 @@ export function PianoRoll({
 
   const isSelectMode = mode === MODES.SELECT
 
+useEffect(() => {
+  const line = playheadLineRef.current
+  const view = mainRef.current
+
+  if (!isPlaying || !line || !view) {
+    if (line) line.style.display = 'none'
+    return
+  }
+
+  let raf
+
+  const update = () => {
+    const cell = currentPlayheadCell.current
+
+    if (cell == null) {
+      line.style.display = 'none'
+      raf = requestAnimationFrame(update)
+      return
+    }
+
+    const x = cell * cellW
+
+    line.style.display = 'block'
+    line.style.transform = `translate3d(${x}px, 0, 0)`
+
+    const left = view.scrollLeft
+    const right = left + view.clientWidth
+    const margin = view.clientWidth * 0.25
+
+    if (x > right - margin) {
+      view.scrollLeft = Math.min(
+        x - margin,
+        view.scrollWidth - view.clientWidth
+      )
+    } else if (x < left + margin) {
+      view.scrollLeft = Math.max(0, x - margin)
+    }
+
+    raf = requestAnimationFrame(update)
+  }
+
+  raf = requestAnimationFrame(update)
+
+  return () => cancelAnimationFrame(raf)
+}, [isPlaying, currentPlayheadCell, cellW])
+
   // Always-fresh snapshot for window handlers
   const snap = useRef({})
   snap.current = {
     notes,
     selectedIds,
     onUpdateNotes,
+    onDuplicateNotes,
     onSelectNotes,
     onDeselectAll,
     onToggleSelect,
   }
+
+
 
   // ── Scroll sync ────────────────────────────────────────────────────────────
   const onScroll = useCallback(() => {
@@ -131,17 +181,6 @@ export function PianoRoll({
     if (!m) return
     m.scrollTop = pitchToY(60) - m.clientHeight / 2
   }, [])
-
-  // useEffect(() => {
-  //   if (playheadRef === null) return
-  //   const m = mainRef.current
-  //   if (!m) return
-  //   const x = playheadRef * cellW
-
-  //   if (x > m.scrollLeft + m.clientWidth - cellW * 8) {
-  //     m.scrollLeft = x - m.clientWidth * 0.3
-  //   }
-  // }, [playheadRef])
 
   // Clear transient drag state when switching modes
   useEffect(() => {
@@ -169,23 +208,23 @@ useEffect(() => {
     }
 
     if (drag.type === 'resize') {
-      const note = snap.current.notes.find(n => n.id === drag.noteId)
-      if (!note) return
+  const anchorEnd = drag.anchorStart + drag.anchorDur - 1
 
-      const preview = {
-        type: 'resize',
-        noteId: drag.noteId,
-        newDur: clamp(g.col - note.start + 1, 1, totalCells - note.start),
-      }
-      dragPreviewRef.current = preview
-      setDragPreview(preview)
-      setGridCursor('ew-resize')
-      return
-    }
+  const preview = {
+    type: 'resize',
+    ids: drag.resizedIds,
+    deltaDur: g.col - anchorEnd,
+  }
 
-    if (drag.type === 'move') {
+  dragPreviewRef.current = preview
+  setDragPreview(preview)
+  setGridCursor('ew-resize')
+  return
+}
+
+    if (drag.type === 'move' || drag.type === 'duplicate') {
       const preview = {
-        type: 'move',
+        type: drag.type,
         deltaCol: g.col - drag.startCol,
         deltaPitch: g.pitch - drag.startPitch,
         ids: drag.movedIds,
@@ -200,7 +239,7 @@ useEffect(() => {
     if (!dragRef.current) return
     const drag = dragRef.current
     const preview = dragPreviewRef.current
-    const { notes, onUpdateNotes, onSelectNotes } = snap.current
+    const { notes, onUpdateNotes, onDuplicateNotes, onSelectNotes } = snap.current
 
     if (drag.type === 'box') {
       const x1 = drag.startPx ?? 0
@@ -232,8 +271,19 @@ useEffect(() => {
     }
 
     if (drag.type === 'resize' && preview?.type === 'resize') {
-      onUpdateNotes([{ id: drag.noteId, dur: preview.newDur }])
-    }
+  if (preview.deltaDur !== 0) {
+    onUpdateNotes(
+      drag.origNotes.map(note => ({
+        id: note.id,
+        dur: clamp(
+          note.dur + preview.deltaDur,
+          1,
+          totalCells - note.start
+        ),
+      }))
+    )
+  }
+}
 
     if (drag.type === 'move' && preview?.type === 'move') {
       const { deltaCol, deltaPitch } = preview
@@ -247,6 +297,18 @@ useEffect(() => {
         )
       }
       onSelectNotes(drag.origNotes.map(n => n.id), true)
+    }
+
+    if (drag.type === 'duplicate' && preview?.type === 'duplicate') {
+      const {deltaCol, deltaPitch} = preview
+
+      if (deltaCol !== 0 || deltaPitch !== 0) {
+        onDuplicateNotes(
+          drag.origNotes,
+          deltaCol,
+          deltaPitch
+        )
+      }
     }
 
     dragRef.current = null
@@ -264,51 +326,6 @@ useEffect(() => {
   }
 }, [onDeselectAll, totalCells, MIN_NOTE, MAX_NOTE, onSelectNotes, onUpdateNotes])
 
-// useEffect(() => {
-//     let raf
-
-//     function update() {
-//         const cell = currentPlayheadCell.current
-
-//         if (playheadRef.current) {
-//             playheadRef.current.style.transform =
-//                 `translateX(${cell * cellW}px)`
-//         }
-
-//         raf = requestAnimationFrame(update)
-
-//         const x = cell * cellW
-
-// const view = mainRef.current
-
-// if (view && x > view.scrollLeft + view.clientWidth - 200) {
-//     view.scrollLeft = x - 200
-// }
-//     }
-
-//     update()
-
-//     return () => cancelAnimationFrame(raf)
-// }, [cellW])
-
-// useLayoutEffect(() => {
-//     if (!playheadRef.current) return
-
-//     playheadRef.current.style.transform =
-//         `translateX(${playhead * cellW}px)`
-// }, [playhead, cellW])
-
-// useLayoutEffect(() => {
-//     const view = mainRef.current
-//     if (!view) return
-
-//     const x = playhead * cellW
-//     const margin = 200
-
-//     if (x > view.scrollLeft + view.clientWidth - margin) {
-//         view.scrollLeft = x - margin
-//     }
-// }, [playhead, cellW])
 
   // ── Draw mode handlers ─────────────────────────────────────────────────────
 const handleDrawClick = (e) => {
@@ -369,12 +386,26 @@ const handleDrawClick = (e) => {
     const isEdge = g.px >= noteRightPx - RESIZE_PX
 
     if (isEdge) {
-      dragRef.current = { type: 'resize', noteId: note.id }
+      const toResize = notes.filter(n => effectiveIds.has(n.id))
+
+      dragRef.current = {
+        type: 'resize',
+        anchorStart: note.start,
+        anchorDur: note.dur,
+        origNotes: toResize.map(n => ({
+          id: n.id,
+          start: n.start,
+          pitch: n.pitch,
+          dur: n.dur,
+          vel: n.vel,
+        })),
+        resizedIds: new Set(toResize.map(n => n.id)),
+      }
       setGridCursor('ew-resize')
     } else {
       const toMove = notes.filter(n => effectiveIds.has(n.id))
       dragRef.current = {
-        type: 'move',
+        type: e.altKey ? 'duplicate' : 'move',
         startCol: g.col,
         startPitch: g.pitch,
         origNotes: toMove.map(n => ({
@@ -382,6 +413,7 @@ const handleDrawClick = (e) => {
           start: n.start,
           pitch: n.pitch,
           dur: n.dur,
+          vel: n.vel,
         })),
         movedIds: new Set(toMove.map(n => n.id)),
       }
@@ -417,50 +449,7 @@ const handleDrawClick = (e) => {
       ghost.start < n.start + n.dur
   )
 
-  useEffect(() => {
-  let raf
 
-  const updatePlayhead = () => {
-    const cell = currentPlayheadCell?.current
-    const line = playheadLineRef.current
-    const view = mainRef.current
-
-    if (line) {
-      if (cell == null) {
-        line.style.display = "none"
-      } else {
-        line.style.display = "block"
-
-        const x = cell * cellW
-
-        line.style.transform =
-          `translate3d(${x}px, 0, 0)`
-
-        if (view) {
-          const rightEdge =
-            view.scrollLeft + view.clientWidth
-
-          const followMargin = 200
-
-          if (x > rightEdge - followMargin) {
-            view.scrollLeft = Math.max(
-              0,
-              x - followMargin
-            )
-          }
-        }
-      }
-    }
-
-    raf = requestAnimationFrame(updatePlayhead)
-  }
-
-  raf = requestAnimationFrame(updatePlayhead)
-
-  return () => {
-    cancelAnimationFrame(raf)
-  }
-}, [currentPlayheadCell, cellW])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
@@ -515,7 +504,7 @@ const handleDrawClick = (e) => {
               position: 'relative',
               width: gridW,
               height: GRID_H,
-              cursor: isSelectMode ? gridCursor : 'crosshair',
+              cursor: isSelectMode ? gridCursor : 'default',
               userSelect: 'none',
             }}
           >
@@ -847,64 +836,84 @@ const NotesLayer = React.memo(function NotesLayer({
     activeTrackColor,
     totalCells,
 }) {
-    const visibleNotes = useMemo(() => {
-        return notes
-            .map(n => {
-                if (!dragPreview) return n
+const visibleNotes = useMemo(() => {
+  let displayNotes = notes
 
-                if (
-                    dragPreview.type === 'resize' &&
-                    dragPreview.noteId === n.id
-                ) {
-                    return {
-                        ...n,
-                        dur: dragPreview.newDur,
-                    }
-                }
+  if (dragPreview?.type === 'move') {
+    displayNotes = notes.map(n => {
+      if (!dragPreview.ids?.has(n.id)) return n
 
-                if (
-                    dragPreview.type === 'move' &&
-                    dragPreview.ids?.has(n.id)
-                ) {
-                    return {
-                        ...n,
-                        start: clamp(
-                            n.start + dragPreview.deltaCol,
-                            0,
-                            totalCells - n.dur
-                        ),
-                        pitch: clamp(
-                            n.pitch + dragPreview.deltaPitch,
-                            MIN_NOTE,
-                            MAX_NOTE
-                        ),
-                    }
-                }
+      return {
+        ...n,
+        start: clamp(
+          n.start + dragPreview.deltaCol,
+          0,
+          totalCells - n.dur
+        ),
+        pitch: clamp(
+          n.pitch + dragPreview.deltaPitch,
+          MIN_NOTE,
+          MAX_NOTE
+        ),
+      }
+    })
+  }
 
-                return n
-            })
-            .filter(note => {
-                const row = MAX_NOTE - note.pitch
+  if (dragPreview?.type === 'duplicate') {
+    const copies = notes
+      .filter(n => dragPreview.ids?.has(n.id))
+      .map(n => ({
+        ...n,
+        id: `preview-${n.id}`,
+        start: clamp(
+          n.start + dragPreview.deltaCol,
+          0,
+          totalCells - n.dur
+        ),
+        pitch: clamp(
+          n.pitch + dragPreview.deltaPitch,
+          MIN_NOTE,
+          MAX_NOTE
+        ),
+      }))
 
-                const horizontallyVisible =
-                    note.start < viewport.lastCol &&
-                    note.start + note.dur > viewport.firstCol
+    displayNotes = [...notes, ...copies]
+  }
 
-                const verticallyVisible =
-                    row >= viewport.firstRow &&
-                    row <= viewport.lastRow
+  if (dragPreview?.type === 'resize') {
+    displayNotes = notes.map(n => {
+      if (!dragPreview.ids?.has(n.id)) return n
 
-                return horizontallyVisible && verticallyVisible
-            })
-    }, [
-        notes,
-        dragPreview,
-        totalCells,
-        viewport.firstCol,
-        viewport.lastCol,
-        viewport.firstRow,
-        viewport.lastRow,
-    ])
+      return {
+        ...n,
+        dur: clamp(
+          n.dur + dragPreview.deltaDur,
+          1,
+          totalCells - n.start
+        ),
+      }
+    })
+  }
+
+  return displayNotes.filter(note => {
+    const row = MAX_NOTE - note.pitch
+
+    return (
+      note.start < viewport.lastCol &&
+      note.start + note.dur > viewport.firstCol &&
+      row >= viewport.firstRow &&
+      row <= viewport.lastRow
+    )
+  })
+}, [
+  notes,
+  dragPreview,
+  totalCells,
+  viewport.firstCol,
+  viewport.lastCol,
+  viewport.firstRow,
+  viewport.lastRow,
+])
 
     // console.log(
     //     "NotesLayer notes:",

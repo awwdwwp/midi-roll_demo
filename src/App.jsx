@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, act } from 'react'
 import { Midi }                from '@tonejs/midi'
 import { encodeMidi } from './utils/midiExport'
 import { Toolbar }             from './components/Toolbar'
@@ -62,6 +62,7 @@ export default function App() {
 
 // const playheadRef = useRef(null)
 const currentPlayheadCell = useRef(null)
+const clipboardRef = useRef(null)
 
 const handleSaveProject = useCallback(() => {
   const snapshot = {
@@ -246,6 +247,162 @@ const handleToggleNote = useCallback((pitch, startCell) => {
     })
     setSelectedIds(new Set())
   }, [pushCommandFn, selectedIds])
+
+  const getSelectedNotes = useCallback(() => {
+  if (!activeTrack) return []
+
+  return activeTrack.notes.filter(note =>
+    selectedIds.has(note.id)
+  )
+}, [activeTrack, selectedIds])
+
+const handleCopySelected = useCallback(() => {
+  const selected = getSelectedNotes()
+
+  if (selected.length === 0) return false
+
+  const firstStart = Math.min(...selected.map(note => note.start))
+  const lowestPitch = Math.min(...selected.map(note => note.pitch))
+
+  clipboardRef.current = {
+    basePitch: lowestPitch,
+    notes: selected.map(note => ({
+      startOffset: note.start - firstStart,
+      pitchOffset: note.pitch - lowestPitch,
+      dur: note.dur,
+      vel: note.vel ?? 100,
+    })),
+  }
+
+  return true
+}, [getSelectedNotes])
+
+const handlePaste = useCallback(() => {
+  const clipboard = clipboardRef.current
+
+  if (!clipboard?.notes?.length || !activeTrack) return
+
+  const inserted = clipboard.notes
+    .map(note => {
+      const start = Math.max(
+        0,
+        Math.min(totalCells - 1, playStartCell + note.startOffset)
+      )
+
+      const dur = Math.max(
+        1,
+        Math.min(note.dur, totalCells - start)
+      )
+
+      return {
+        id: uid(),
+        trackId: activeTrack.id,
+        start,
+        pitch: Math.max(
+          MIN_NOTE,
+          Math.min(MAX_NOTE, clipboard.basePitch + note.pitchOffset)
+        ),
+        dur,
+        vel: note.vel,
+      }
+    })
+    .filter(note => note.start < totalCells)
+
+  if (inserted.length === 0) return
+
+  pushCommand({
+    type: 'NOTE_ADD_MANY',
+    trackId: activeTrack.id,
+    notes: inserted,
+  })
+
+  setSelectedIds(new Set(inserted.map(note => note.id)))
+}, [
+  activeTrack,
+  playStartCell,
+  pushCommand,
+  totalCells,
+])
+
+const handleCutSelected = useCallback(() => {
+  if (handleCopySelected()) {
+    handleDeleteSelected()
+  }
+}, [handleCopySelected, handleDeleteSelected])
+
+const handleDuplicateSelected = useCallback(() => {
+  const selected = getSelectedNotes()
+
+  if (selected.length === 0 || !activeTrack) return
+
+  const firstStart = Math.min(...selected.map(note => note.start))
+  const lastEnd = Math.max(
+    ...selected.map(note => note.start + note.dur)
+  )
+
+  const selectionWidth = Math.max(1, lastEnd - firstStart)
+  const availableSpace = totalCells - lastEnd
+  const offset = Math.min(selectionWidth, availableSpace)
+
+  if (offset <= 0) return
+
+  const inserted = selected.map(note => ({
+    ...note,
+    id: uid(),
+    trackId: activeTrack.id,
+    start: note.start + offset,
+  }))
+
+  pushCommand({
+    type: 'NOTE_ADD_MANY',
+    trackId: activeTrack.id,
+    notes: inserted,
+  })
+
+  setSelectedIds(new Set(inserted.map(note => note.id)))
+}, [
+  activeTrack,
+  getSelectedNotes,
+  pushCommand,
+  totalCells,
+])
+
+const handleDuplicateNotes = useCallback((
+  sourceNotes,
+  deltaCol,
+  deltaPitch
+) => {
+  if (!activeTrack || sourceNotes.length === 0) return
+
+  const inserted = sourceNotes.map(note => ({
+    ...note,
+    id: uid(),
+    trackId: activeTrack.id,
+    start: Math.max(
+      0, 
+      Math.min(
+        totalCells - note.dur,
+        note.start + deltaCol
+      )
+    ), 
+    pitch: Math.max(
+      MIN_NOTE,
+      Math.min(MAX_NOTE, note.pitch + deltaPitch)
+    ),
+  }))
+
+  pushCommand({
+    type: 'NOTE_ADD_MANY',
+    trackId: activeTrack.id,
+    notes: inserted,
+  })
+
+  setSelectedIds(new Set(inserted.map(note => note.id)))
+}, [
+  activeTrack,
+  pushCommand,
+  totalCells,
+])
 
   const handleVelocityChange = useCallback((ids, velocity) => {
     pushCommandFn(p => {
@@ -501,6 +658,44 @@ const handleUpdateTrack = useCallback((id, updates) => {
       if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return
       const ctrl = e.ctrlKey || e.metaKey
 
+      if (ctrl && !e.shiftKey && e.code === 'KeyA') {
+        e.preventDefault()
+
+        if (activeTrack) {
+          setSelectedIds(new Set(activeTrack.notes.map(note => note.id)))
+        }
+
+        return
+      }
+
+      if (ctrl && e.shiftKey && e.code === 'KeyA') {
+        e.preventDefault()
+        handleDeselectAll()
+        return
+      }
+
+      if (ctrl && e.code === 'KeyC') {
+        e.preventDefault()
+        handleCopySelected()
+        return
+      }
+
+      if (ctrl && e.code === 'KeyX') {
+        e.preventDefault()
+        handleCutSelected()
+        return
+      }
+
+      if (ctrl && e.code === 'KeyV') {
+        e.preventDefault()
+        handlePaste()
+        return
+      }
+      if (ctrl && e.code === 'KeyD') {
+        e.preventDefault()
+        handleDuplicateSelected()
+        return
+      }
       if (ctrl && !e.shiftKey && e.code === 'KeyZ')  { e.preventDefault(); undo(); return }
       if (ctrl && e.shiftKey  && e.code === 'KeyZ')  { e.preventDefault(); redo(); return }
       if (ctrl && !e.shiftKey && e.code === 'KeyY')  { e.preventDefault(); redo(); return }
@@ -513,7 +708,7 @@ const handleUpdateTrack = useCallback((id, updates) => {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, redo, handlePlayToggle, handleDeleteSelected, handleDeselectAll, handleModeChange, selectedIds])
+  }, [activeTrack, undo, redo, handlePlayToggle, handleDeleteSelected, handleDeselectAll, handleCopySelected, handleCutSelected, handlePaste, handleDuplicateSelected, handleModeChange, selectedIds])
 
   useKeyboard({
   attackNote,
@@ -726,6 +921,7 @@ const handleUpdateTrack = useCallback((id, updates) => {
             ghostTracks={ghostTracks}
             // playhead={playhead}
             currentPlayheadCell={currentPlayheadCell}
+            isPlaying={isPlaying}
             playStartCell={playStartCell}
             onSetPlayStart={v =>
               setProjectDirect(p => ({ ...p, settings: { ...p.settings, playStartCell: v } }))
@@ -737,6 +933,7 @@ const handleUpdateTrack = useCallback((id, updates) => {
             onToggleNote={handleToggleNote}
             onPreviewNote={playNote}
             onUpdateNotes={handleUpdateNotes}
+            onDuplicateNotes={handleDuplicateNotes}
             onSelectNotes={handleSelectNotes}
             onDeselectAll={handleDeselectAll}
             onToggleSelect={handleToggleSelect}

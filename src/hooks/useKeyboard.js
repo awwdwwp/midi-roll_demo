@@ -14,6 +14,8 @@ export function useKeyboard({
       // Don't steal keys from BPM input etc.
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
 
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+
       const offset = KEYBOARD_MAP[e.key]
       if (offset === undefined) return
 
@@ -24,6 +26,7 @@ export function useKeyboard({
     }
 
     const onUp = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return
       const offset = KEYBOARD_MAP[e.key]
       if (offset === undefined) return
       const midi = KEYBOARD_BASE + offset

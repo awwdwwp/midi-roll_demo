@@ -19,6 +19,11 @@ export function applyCommand(project, cmd) {
     case 'NOTE_ADD':
       return patchNotes(project, cmd.trackId, ns => [...ns, cmd.note])
 
+    case 'NOTE_ADD_MANY':
+  return patchNotes(project, cmd.trackId, ns => [
+    ...ns,
+    ...cmd.notes,
+  ])
     case 'NOTE_DELETE': {
       const ids = new Set(cmd.notes.map(n => n.id))
       return patchNotes(project, cmd.trackId, ns => ns.filter(n => !ids.has(n.id)))
@@ -84,17 +89,25 @@ export function applyCommand(project, cmd) {
 export function undoCommand(project, cmd) {
   switch (cmd.type) {
 
-    // undo add  → delete
+    // undo add  - delete
     case 'NOTE_ADD':
       return patchNotes(project, cmd.trackId, ns =>
         ns.filter(n => n.id !== cmd.note.id)
       )
 
-    // undo delete → re-insert (note order inside a track doesn't matter)
+    case 'NOTE_ADD_MANY': {
+      const ids = new Set(cmd.notes.map(n => n.id))
+
+      return patchNotes(project, cmd.trackId, ns => 
+        ns.filter(n => !ids.has(n.id))
+      )
+    }
+
+    // undo delete - re-insert
     case 'NOTE_DELETE':
       return patchNotes(project, cmd.trackId, ns => [...ns, ...cmd.notes])
 
-    // undo update → restore before-snapshots
+    // undo update
     case 'NOTE_UPDATE': {
       const map = new Map(cmd.before.map(n => [n.id, n]))
       return patchNotes(project, cmd.trackId, ns =>
@@ -102,7 +115,7 @@ export function undoCommand(project, cmd) {
       )
     }
 
-    // undo add track → delete it, restore previous active track
+    // undo add track - delete it, restore previous active track
     case 'TRACK_ADD': {
       const tracks = project.tracks.filter(t => t.id !== cmd.track.id)
       return {
@@ -112,7 +125,7 @@ export function undoCommand(project, cmd) {
       }
     }
 
-    // undo delete → re-insert at original index, make it active again
+    // undo delete - re-insert at original index
     case 'TRACK_DELETE': {
       const tracks = [...project.tracks]
       tracks.splice(cmd.index, 0, cmd.track)
@@ -123,7 +136,7 @@ export function undoCommand(project, cmd) {
       }
     }
 
-    // undo duplicate → remove the copy, restore source as active
+    // undo duplicate - remove the copy
     case 'TRACK_DUPLICATE': {
       const tracks = project.tracks.filter(t => t.id !== cmd.newTrack.id)
       return {

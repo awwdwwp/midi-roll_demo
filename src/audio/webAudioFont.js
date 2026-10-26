@@ -1,9 +1,7 @@
 let audioContext = null
 
-export async function getAudioEngine() {
-
+export function getAudioEngine() {
   if (!audioContext) {
-
     const Context =
       window.AudioContext ||
       window.webkitAudioContext
@@ -14,6 +12,12 @@ export async function getAudioEngine() {
 
     audioContext = new Context()
   }
+
+  return { audioContext }
+}
+
+export async function resumeAudioEngine() {
+  const { audioContext } = getAudioEngine()
 
   if (audioContext.state !== "running") {
     await audioContext.resume()

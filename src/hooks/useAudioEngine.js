@@ -3,7 +3,10 @@ import * as Tone from "tone"
 
 import { loadPreset } from "../audio/gmPresets"
 import { playSample, stopAllSamples } from "../audio/sampler"
-import { getAudioEngine } from "../audio/webAudioFont"
+import {
+  getAudioEngine,
+  resumeAudioEngine,
+} from "../audio/webAudioFont"
 
 export function useAudioEngine() {
 
@@ -13,7 +16,7 @@ export function useAudioEngine() {
 const playNote = useCallback(async (midiPitch, program = 0) => {
 
 
-  const { audioContext } = await getAudioEngine()
+  await resumeAudioEngine()
 
 
   const preset = await loadPreset(program)
@@ -62,7 +65,7 @@ const playNote = useCallback(async (midiPitch, program = 0) => {
 
     await Tone.start()
 
-    const { audioContext } = await getAudioEngine()
+    const { audioContext } = await resumeAudioEngine()
 
     const presets = new Map()
 

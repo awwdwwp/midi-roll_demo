@@ -48,10 +48,7 @@ let t0 = performance.now()
   const source = audioContext.createBufferSource()
   activeVoices++
 
-if (activeVoices > 300)
-    // console.log("voices", activeVoices)
-
-  activeSources.add(source)
+activeSources.add(source)
 
   source.onended = () => {
     activeSources.delete(source)
